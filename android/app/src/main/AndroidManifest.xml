@@ -1,6 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <application
-        android:label="sk_assets"
+        android:label="SK ASSETS"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         <activity

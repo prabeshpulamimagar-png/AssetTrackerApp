@@ -27,9 +27,9 @@ flutter:
   uses-material-design: true
 
   assets:
-    - assets/sk_new_logo.jpeg
+    - assets/sk_new_logo.png
 
 flutter_icons:
-  image_path: "assets/sk_new_logo.jpeg"
+  image_path: "assets/sk_new_logo.png"
   android: true
   ios: true
