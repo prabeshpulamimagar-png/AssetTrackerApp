@@ -146,12 +146,11 @@ class DatabaseHelper {
             );
           }
         } catch (e) {
-          // एउटा data fail भए बाँकीलाई रोक्ने
           break;
         }
       }
     } catch (e) {
-      // Internet/database error भए app crash हुन नदिने
+      // Ignore network errors during background sync
     }
   }
 }
@@ -180,7 +179,7 @@ class AssetTrackerApp extends StatelessWidget {
 }
 
 // ============================================================
-// QR SCANNER SCREEN
+// QR SCANNER SCREEN (With SKASSET Validation)
 // ============================================================
 
 class QRScanScreen extends StatefulWidget {
@@ -201,10 +200,8 @@ class _QRScanScreenState extends State<QRScanScreen> {
   void initState() {
     super.initState();
 
-    // App खोल्दा pending data sync
     DatabaseHelper.instance.syncPendingData();
 
-    // Internet फर्किएपछि automatic sync
     connectivitySubscription = Connectivity().onConnectivityChanged.listen(
       (List<ConnectivityResult> results) async {
         if (results.contains(ConnectivityResult.none)) {
@@ -219,7 +216,6 @@ class _QRScanScreenState extends State<QRScanScreen> {
   @override
   void dispose() {
     connectivitySubscription?.cancel();
-
     super.dispose();
   }
 
@@ -243,7 +239,7 @@ class _QRScanScreenState extends State<QRScanScreen> {
               ScaffoldMessenger.of(context).showSnackBar(
                 const SnackBar(
                   content: Text(
-                    'सिंक गर्ने प्रयास गरियो!',
+                    'अपडेट गर्ने प्रयास गरियो!',
                   ),
                 ),
               );
@@ -251,8 +247,6 @@ class _QRScanScreenState extends State<QRScanScreen> {
           ),
         ],
       ),
-
-      // Automatic QR scanner
       body: MobileScanner(
         onDetect: (capture) {
           if (isScanned) {
@@ -268,6 +262,35 @@ class _QRScanScreenState extends State<QRScanScreen> {
               continue;
             }
 
+            // ========================================================
+            // SECURITY CHECK: SKASSET Prefix Validation
+            // ========================================================
+            if (!code.startsWith('SKASSET')) {
+              setState(() {
+                isScanned = true;
+              });
+
+              ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(
+                  content: Text(
+                    'तपाईंको QR Code मिलेन । सही QR स्क्यान गर्नुहोस्।',
+                  ),
+                  backgroundColor: Colors.red,
+                ),
+              );
+
+              Future.delayed(const Duration(seconds: 2), () {
+                if (mounted) {
+                  setState(() {
+                    isScanned = false;
+                  });
+                }
+              });
+
+              break;
+            }
+            // ========================================================
+
             setState(() {
               isScanned = true;
             });
@@ -282,8 +305,6 @@ class _QRScanScreenState extends State<QRScanScreen> {
             ).then((_) {
               if (!mounted) return;
 
-              // Details screen बाट फर्किएपछि
-              // फेरि automatic scan ready
               setState(() {
                 isScanned = false;
               });
@@ -314,16 +335,9 @@ class AssetActionScreen extends StatefulWidget {
 }
 
 class _AssetActionScreenState extends State<AssetActionScreen> {
-  // Controllers
   final TextEditingController _nameController = TextEditingController();
-
   final TextEditingController _priceController = TextEditingController();
-
   final TextEditingController _sellPriceController = TextEditingController();
-
-  // ============================================================
-  // LOCATION
-  // ============================================================
 
   String selectedLocation = 'Office';
 
@@ -334,10 +348,6 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
     'Al quoz Camp',
     'Office',
   ];
-
-  // ============================================================
-  // STATUS
-  // ============================================================
 
   String selectedStatus = 'Active';
 
@@ -352,17 +362,12 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
   bool isSending = false;
   bool isLoading = false;
 
-  // ============================================================
-  // GOOGLE APPS SCRIPT URL
-  // ============================================================
-
   final String scriptUrl =
       "https://script.google.com/macros/s/AKfycbxaz4ozn8qajBQCTx2cBQoP2uabvbVyXaTyqgqF3RRYBAJTnbVrd8p56HvBmeS6HXNd/exec";
 
   @override
   void initState() {
     super.initState();
-
     checkExistingAssetInBackground();
   }
 
@@ -371,13 +376,8 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
     _nameController.dispose();
     _priceController.dispose();
     _sellPriceController.dispose();
-
     super.dispose();
   }
-
-  // ============================================================
-  // CHECK EXISTING ASSET
-  // ============================================================
 
   Future<void> checkExistingAssetInBackground() async {
     try {
@@ -407,37 +407,23 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
         if (data['exists'] == true) {
           setState(() {
             isExisting = true;
-
-            // Asset Name
             _nameController.text = data['assetName'] ?? '';
-
-            // Original Price
             _priceController.text = data['price']?.toString() ?? '';
 
-            // Location
-            if (locationList.contains(
-              data['location'],
-            )) {
+            if (locationList.contains(data['location'])) {
               selectedLocation = data['location'];
             }
 
-            // Status
-            if (statusList.contains(
-              data['status'],
-            )) {
+            if (statusList.contains(data['status'])) {
               selectedStatus = data['status'];
             }
           });
         }
       }
     } catch (e) {
-      // Internet नभए ignore गर्ने
+      // Ignore background check failures
     }
   }
-
-  // ============================================================
-  // SAVE DATA
-  // ============================================================
 
   Future<void> submitData() async {
     if (isSending) {
@@ -451,13 +437,9 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
     });
 
     final String currentDate = DateFormat('yyyy-MM-dd').format(DateTime.now());
-
     final String currentTime = DateFormat('HH:mm:ss').format(DateTime.now());
 
-    // Original Price
     final String finalPrice = _priceController.text.trim();
-
-    // Sell Price
     String finalSellPrice = "0";
 
     if (selectedStatus == 'Damage') {
@@ -465,10 +447,6 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
           ? "0"
           : _sellPriceController.text.trim();
     }
-
-    // ============================================================
-    // FORM DATA
-    // ============================================================
 
     final Map<String, dynamic> formData = {
       "date": currentDate,
@@ -490,10 +468,6 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
 
       final bool isOnline =
           !connectivityResult.contains(ConnectivityResult.none);
-
-      // ========================================================
-      // ONLINE
-      // ========================================================
 
       if (isOnline) {
         final response = await http
@@ -525,22 +499,10 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
 
           Navigator.of(pageContext).pop();
         } else {
-          throw Exception(
-            'Google Sheet save failed',
-          );
+          throw Exception('Google Sheet save failed');
         }
-      }
-
-      // ========================================================
-      // OFFLINE
-      // ========================================================
-
-      else {
-        await DatabaseHelper.instance.insertPendingAsset(
-          formData,
-        );
-
-        if (!mounted) return;
+      } else {
+        await DatabaseHelper.instance.insertPendingAsset(formData);
 
         if (!mounted) return;
 
@@ -554,18 +516,8 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
 
         Navigator.of(pageContext).pop();
       }
-    }
-
-    // ==========================================================
-    // NETWORK ERROR -> SAVE LOCALLY
-    // ==========================================================
-
-    catch (e) {
-      await DatabaseHelper.instance.insertPendingAsset(
-        formData,
-      );
-
-      if (!mounted) return;
+    } catch (e) {
+      await DatabaseHelper.instance.insertPendingAsset(formData);
 
       if (!mounted) return;
 
@@ -587,10 +539,6 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
     }
   }
 
-  // ============================================================
-  // UI
-  // ============================================================
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -607,10 +555,6 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
               padding: const EdgeInsets.all(16.0),
               child: ListView(
                 children: [
-                  // ==================================================
-                  // SCANNED ID
-                  // ==================================================
-
                   Text(
                     'Scanned ID: ${widget.assetId}',
                     style: const TextStyle(
@@ -619,15 +563,7 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
                       color: Colors.blue,
                     ),
                   ),
-
-                  const SizedBox(
-                    height: 20,
-                  ),
-
-                  // ==================================================
-                  // 1. ASSET NAME
-                  // ==================================================
-
+                  const SizedBox(height: 20),
                   TextField(
                     controller: _nameController,
                     decoration: const InputDecoration(
@@ -635,91 +571,51 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
                       border: OutlineInputBorder(),
                     ),
                   ),
-
-                  const SizedBox(
-                    height: 20,
-                  ),
-
-                  // ==================================================
-                  // 2. STATUS
-                  // ==================================================
-
+                  const SizedBox(height: 20),
                   DropdownButtonFormField<String>(
-                    initialValue: statusList.contains(
-                      selectedStatus,
-                    )
+                    initialValue: statusList.contains(selectedStatus)
                         ? selectedStatus
                         : 'Active',
                     decoration: const InputDecoration(
                       labelText: 'Status',
                       border: OutlineInputBorder(),
                     ),
-                    items: statusList.map(
-                      (String status) {
-                        return DropdownMenuItem<String>(
-                          value: status,
-                          child: Text(status),
-                        );
-                      },
-                    ).toList(),
+                    items: statusList.map((String status) {
+                      return DropdownMenuItem<String>(
+                        value: status,
+                        child: Text(status),
+                      );
+                    }).toList(),
                     onChanged: (String? val) {
-                      if (val == null) {
-                        return;
-                      }
-
+                      if (val == null) return;
                       setState(() {
                         selectedStatus = val;
                       });
                     },
                   ),
-
-                  const SizedBox(
-                    height: 20,
-                  ),
-
-                  // ==================================================
-                  // 3. LOCATION
-                  // ==================================================
-                  // अब Existing Asset भए पनि Location सधैं देखिन्छ
-                  // ==================================================
-
+                  const SizedBox(height: 20),
                   DropdownButtonFormField<String>(
-                    initialValue: locationList.contains(
-                      selectedLocation,
-                    )
+                    initialValue: locationList.contains(selectedLocation)
                         ? selectedLocation
                         : 'Office',
                     decoration: const InputDecoration(
                       labelText: 'Asset Location (लोकेशन)',
                       border: OutlineInputBorder(),
                     ),
-                    items: locationList.map(
-                      (String loc) {
-                        return DropdownMenuItem<String>(
-                          value: loc,
-                          child: Text(loc),
-                        );
-                      },
-                    ).toList(),
+                    items: locationList.map((String loc) {
+                      return DropdownMenuItem<String>(
+                        value: loc,
+                        child: Text(loc),
+                      );
+                    }).toList(),
                     onChanged: (String? val) {
-                      if (val == null) {
-                        return;
-                      }
-
+                      if (val == null) return;
                       setState(() {
                         selectedLocation = val;
                       });
                     },
                   ),
-
-                  const SizedBox(
-                    height: 20,
-                  ),
-
-                  // ==================================================
-                  // 4. ORIGINAL PRICE
-                  // ==================================================
-
+                  const SizedBox(height: 20),
                   TextField(
                     controller: _priceController,
                     keyboardType: const TextInputType.numberWithOptions(
@@ -730,17 +626,8 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
                       border: OutlineInputBorder(),
                     ),
                   ),
-
-                  // ==================================================
-                  // 5. SELL PRICE
-                  // ==================================================
-                  // Damage select गरेपछि मात्र देखिन्छ
-                  // ==================================================
-
                   if (selectedStatus == 'Damage') ...[
-                    const SizedBox(
-                      height: 20,
-                    ),
+                    const SizedBox(height: 20),
                     TextField(
                       controller: _sellPriceController,
                       keyboardType: const TextInputType.numberWithOptions(
@@ -752,22 +639,12 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
                       ),
                     ),
                   ],
-
-                  const SizedBox(
-                    height: 30,
-                  ),
-
-                  // ==================================================
-                  // SAVE BUTTON
-                  // ==================================================
-
+                  const SizedBox(height: 30),
                   SizedBox(
                     width: double.infinity,
                     child: ElevatedButton(
                       style: ElevatedButton.styleFrom(
-                        padding: const EdgeInsets.symmetric(
-                          vertical: 15,
-                        ),
+                        padding: const EdgeInsets.symmetric(vertical: 15),
                         backgroundColor: Colors.blue,
                         foregroundColor: Colors.white,
                       ),
@@ -783,9 +660,7 @@ class _AssetActionScreenState extends State<AssetActionScreen> {
                             )
                           : const Text(
                               'Save Asset',
-                              style: TextStyle(
-                                fontSize: 16,
-                              ),
+                              style: TextStyle(fontSize: 16),
                             ),
                     ),
                   ),
